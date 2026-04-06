@@ -1,7 +1,8 @@
 #st.set_page_config(page_title="Workout Studio Application")
 import streamlit as st
 st.title("UD Fitness Club Application - Made by: Sophia, Annie, and Mallory")
-
+if "registered_classes" not in st.session_state:
+    st.session_state.registered_classes = []
 
 tab1, tab2, tab3 = st.tabs(["Home", "Workouts", "Profile"])
 
