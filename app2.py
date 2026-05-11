@@ -77,9 +77,32 @@ class UserManager:
         for user in self.users:
             if user["username"] == username:
                 return False  # Username already exists
-        self.users.append({"username": username, "password": password, "user_type": user_type})
+        self.users.append({
+            "username": username,
+            "password": password,
+            "user_type": user_type,
+            "display_name": username,
+            "email": "",
+            "bio": ""
+        })
         self.save_users()
         return True
+
+    def get_user_profile(self, username):
+        for user in self.users:
+            if user["username"] == username:
+                return user
+        return None
+
+    def update_profile(self, username, display_name, email, bio):
+        for user in self.users:
+            if user["username"] == username:
+                user["display_name"] = display_name
+                user["email"] = email
+                user["bio"] = bio
+                self.save_users()
+                return True
+        return False
 
     def login(self, username, password):
         for user in self.users:
@@ -161,6 +184,80 @@ class WorkoutManager:
 
     def get_class_options(self):
         return [f"{c['class']} - {c['time']}" for c in self.classes]
+
+    def get_class_identifier(self, class_obj):
+        return f"{class_obj['class']} - {class_obj['time']}"
+
+    def get_student_count_for_class(self, class_identifier):
+        count = 0
+        for bookings in self.user_manager.bookings.values():
+            if class_identifier in bookings:
+                count += 1
+        return count
+
+    def get_instructor_classes(self, instructor_name):
+        return [cls for cls in self.classes if cls["instructor"] == instructor_name]
+
+    def get_instructor_summary(self, instructor_name):
+        instructor_classes = self.get_instructor_classes(instructor_name)
+        total_classes = len(instructor_classes)
+        total_students = 0
+        class_summaries = []
+
+        for cls in instructor_classes:
+            identifier = self.get_class_identifier(cls)
+            count = self.get_student_count_for_class(identifier)
+            total_students += count
+            class_summaries.append({
+                "class": cls["class"],
+                "time": cls["time"],
+                "location": cls["location"],
+                "students": count,
+                "identifier": identifier
+            })
+
+        return {
+            "total_classes": total_classes,
+            "total_students": total_students,
+            "class_summaries": class_summaries
+        }
+
+    def display_instructor_summary(self, instructor_name):
+        summary = self.get_instructor_summary(instructor_name)
+        st.subheader("📊 Class Manager Summary")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Classes Taught", summary["total_classes"])
+        with col2:
+            st.metric("Total Student Sign-Ups", summary["total_students"])
+
+        if summary["class_summaries"]:
+            st.markdown("**Class-level enrollment**")
+            for cls in summary["class_summaries"]:
+                st.write(f"**{cls['class']}** ({cls['time']}) — {cls['students']} student(s)")
+        else:
+            st.info("Add classes in the Workouts tab to begin tracking your students.")
+
+    def display_instructor_classes(self, instructor_name):
+        instructor_classes = self.get_instructor_classes(instructor_name)
+        st.subheader("👩‍🏫 Your Teaching Schedule")
+        if instructor_classes:
+            for cls in instructor_classes:
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+                    with col1:
+                        emoji = {"Yoga": "🧘‍♀️", "Pilates": "🤸‍♀️", "Barre": "💃", "Cycle": "🚴‍♀️"}.get(cls["class"], "💪")
+                        st.markdown(f"**{emoji} {cls['class']}**")
+                    with col2:
+                        st.caption(f"📍 {cls['location']}")
+                    with col3:
+                        st.caption(f"🕐 {cls['time']}")
+                    with col4:
+                        st.caption(f"👥 Instructor: {cls['instructor']}")
+                    st.divider()
+        else:
+            st.info("📭 You are not assigned to any classes yet.")
 
     def display_sign_up(self):
         if self.classes:
@@ -556,6 +653,45 @@ def display_user_profile():
                     st.success("✅ Booking cancelled")
                     st.rerun()
 
+
+def display_instructor_profile():
+    username = st.session_state["logged_in_user"]
+    profile = user_manager.get_user_profile(username) or {}
+
+    st.header(":blue[Instructor Profile]")
+    st.divider()
+
+    # -------- ACCOUNT INFO --------
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("👤 Profile Details")
+        st.write(f"**Username:** {username}")
+        st.write(f"**Role:** {st.session_state['user_role']}")
+        st.write(f"**Email:** {profile.get('email', '') or 'Not set'}")
+        st.write(f"**Display Name:** {profile.get('display_name', '') or username}")
+
+    # -------- PROFILE EDIT --------
+    with col2:
+        st.subheader("✏️ Edit Profile")
+        display_name = st.text_input("Display Name", value=profile.get("display_name", username), key="instr_display_name")
+        email = st.text_input("Email", value=profile.get("email", ""), key="instr_email")
+        bio = st.text_area("Bio", value=profile.get("bio", ""), key="instr_bio")
+
+        if st.button("💾 Save Profile", key="instr_save_profile"):
+            if user_manager.update_profile(username, display_name, email, bio):
+                st.success("✅ Instructor profile updated successfully!")
+            else:
+                st.error("❌ Unable to update profile")
+
+    st.divider()
+
+    # -------- CLASSES AND STATS --------
+    st.subheader("📊 Teaching Summary")
+    workout_manager.display_instructor_summary(username)
+    st.divider()
+    st.subheader("👩‍🏫 Classes You Teach")
+    workout_manager.display_instructor_classes(username)
+
 #login page for users to log in as either a user or an instructor, the login credentials will be checked against the information stored in the json file and if the credentials are correct, the user will be logged in and taken to the main page of the app
 if st.session_state["page"] == "login":
     st.title("🏋️‍♀️ UD Fitness Club")
@@ -566,17 +702,21 @@ if st.session_state["page"] == "login":
         with st.form("login_form"):
             username = st.text_input("👤 Username", placeholder="Enter your username")
             password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
+            role_choice = st.radio("Login as", ["User", "Teacher"], index=0)
             login_submitted = st.form_submit_button("🚀 Log In")
 
             if login_submitted:
+                expected_role = "Instructor" if role_choice == "Teacher" else "User"
                 user_type = user_manager.login(username, password)
-                if user_type:
+                if user_type == expected_role:
                     st.session_state["logged_in_user"] = username
                     st.session_state["user_role"] = user_type
                     st.session_state.registered_classes = user_manager.get_user_bookings(username)
                     st.success(f"✅ Welcome back, {username}!")
                     st.session_state['page'] = "main"
                     st.rerun()
+                elif user_type and user_type != expected_role:
+                    st.error(f"❌ Account exists as {user_type}, please choose the correct role.")
                 else:
                     st.error("❌ Invalid username or password")
 
@@ -591,13 +731,14 @@ if st.session_state["page"] == "login":
             col1, col2 = st.columns(2)
             with col1:
                 new_username = st.text_input("👤 Username", key="signup_username", placeholder="Choose a username")
-                new_user_type = st.selectbox("🎭 Account Type", ["User", "Instructor"], key="signup_user_type")
+                selected_role = st.selectbox("🎭 Account Type", ["User", "Teacher"], key="signup_user_type")
             with col2:
                 new_password = st.text_input("🔒 Password", type="password", key="signup_password", placeholder="Create a password")
 
             signup_submitted = st.form_submit_button("🎉 Sign Up")
 
             if signup_submitted:
+                new_user_type = "Instructor" if selected_role == "Teacher" else "User"
                 if user_manager.signup(new_username, new_password, new_user_type):
                     st.session_state["logged_in_user"] = new_username
                     st.session_state["user_role"] = new_user_type
@@ -617,12 +758,13 @@ else:
         tab1, tab2, tab3 = st.tabs(["Home", "Workouts", "Profile"])
         with tab1:
             display_home_page()
+            workout_manager.display_instructor_summary(st.session_state["logged_in_user"])
+            workout_manager.display_instructor_classes(st.session_state["logged_in_user"])
             display_chatbot()
         with tab2:
             workout_manager.display_instructor_crud()
         with tab3:
-            st.header(":blue[Instructor Profile]")
-            st.write("Profile management features coming soon.")
+            display_instructor_profile()
     else:
         #user view 
         #tabs again
