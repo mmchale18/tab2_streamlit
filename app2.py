@@ -160,6 +160,83 @@ class WorkoutManager:
             emoji = {"Yoga": "🧘🏻‍♀️", "Pilates": "🤸🏻‍♀️", "Barre": "💃", "Cycle": "🚴🏻‍♀️"}.get(cls["class"], "💪")
             st.write(f"- {cls['class']} {emoji}")
 
+    def display_available_classes_calendar(self):
+        """Display available classes in a calendar format"""
+        st.subheader("📅 Class Schedule Calendar")
+        if not self.classes:
+            st.info("📭 No classes available yet.")
+            return
+        
+        # Days of week in order
+        days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        
+        # Group classes by day
+        classes_by_day = {day: [] for day in days_order}
+        for cls in self.classes:
+            # Extract day from time field (e.g., "Monday 6 PM" -> "Monday")
+            time_parts = cls["time"].split()
+            day = time_parts[0] if time_parts else "Unknown"
+            if day in classes_by_day:
+                classes_by_day[day].append(cls)
+        
+        # Display calendar grid
+        cols = st.columns(7)
+        for i, day in enumerate(days_order):
+            with cols[i]:
+                st.markdown(f"### **{day[:3]}**")
+                if classes_by_day[day]:
+                    for idx, cls in enumerate(classes_by_day[day]):
+                        emoji = {"Yoga": "🧘", "Pilates": "🤸", "Barre": "💃", "Cycle": "🚴"}.get(cls["class"], "💪")
+                        st.markdown(f"**{emoji} {cls['class']}**")
+                        st.caption(f"🕐 {' '.join(cls['time'].split()[1:])}")
+                        st.caption(f"👨‍🏫 {cls['instructor']}")
+                        st.caption(f"📍 {cls['location']}")
+                        if st.button(
+                            "Sign Up",
+                            key=f"cal_signup_{i}_{idx}",
+                            use_container_width=True
+                        ):
+                            username = st.session_state["logged_in_user"]
+                            class_identifier = self.get_class_identifier(cls)
+                            if self.user_manager.add_booking(username, class_identifier):
+                                st.session_state.registered_classes.append(class_identifier)
+                                st.success(f"✅ Signed up for {cls['class']}!")
+                                st.rerun()
+                            else:
+                                st.warning(f"⚠️ Already signed up!")
+                        st.divider()
+                else:
+                    st.caption("No classes")
+
+    def display_available_classes_with_signup(self):
+        """Display available classes with inline sign-up buttons for users"""
+        st.subheader("💪 Available Classes")
+        if self.classes:
+            for idx, cls in enumerate(self.classes):
+                col1, col2, col3, col4, col5 = st.columns([2.5, 2, 1.5, 1.5, 0.8])
+                with col1:
+                    emoji = {"Yoga": "🧘🏻‍♀️", "Pilates": "🤸🏻‍♀️", "Barre": "💃", "Cycle": "🚴🏻‍♀️"}.get(cls["class"], "💪")
+                    st.markdown(f"**{emoji} {cls['class']}**")
+                with col2:
+                    st.caption(f"👨‍🏫 {cls['instructor']}")
+                with col3:
+                    st.caption(f"🕐 {cls['time']}")
+                with col4:
+                    st.caption(f"📍 {cls['location']}")
+                with col5:
+                    if st.button("➕", key=f"signup_btn_{idx}", help="Sign up for this class", use_container_width=True):
+                        username = st.session_state["logged_in_user"]
+                        class_identifier = self.get_class_identifier(cls)
+                        if self.user_manager.add_booking(username, class_identifier):
+                            st.session_state.registered_classes.append(class_identifier)
+                            st.success(f"✅ Signed up for {cls['class']}!")
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ Already signed up for this class!")
+                st.divider()
+        else:
+            st.info("📭 No classes available yet.")
+
     def display_schedule(self):
         st.header("📅 Workout Class Schedule")
         st.write("Browse our available group fitness classes:")
@@ -179,6 +256,37 @@ class WorkoutManager:
                     with col4:
                         st.caption(f"📍 {cls['location']}")
                     st.divider()
+        else:
+            st.info("📭 No classes scheduled yet.")
+
+    def display_schedule_with_signup(self):
+        """Display workout schedule with inline sign-up buttons"""
+        st.header("📅 Workout Class Schedule")
+        st.write("Browse and sign up for our group fitness classes:")
+
+        if self.classes:
+            for idx, cls in enumerate(self.classes):
+                col1, col2, col3, col4, col5 = st.columns([2.5, 2, 1.5, 1.5, 0.8])
+                with col1:
+                    emoji = {"Yoga": "🧘‍♀️", "Pilates": "🤸‍♀️", "Barre": "💃", "Cycle": "🚴‍♀️"}.get(cls["class"], "💪")
+                    st.markdown(f"**{emoji} {cls['class']}**")
+                with col2:
+                    st.caption(f"👨‍🏫 {cls['instructor']}")
+                with col3:
+                    st.caption(f"🕐 {cls['time']}")
+                with col4:
+                    st.caption(f"📍 {cls['location']}")
+                with col5:
+                    if st.button("➕", key=f"schedule_signup_{idx}", help="Sign up for this class", use_container_width=True):
+                        username = st.session_state["logged_in_user"]
+                        class_identifier = self.get_class_identifier(cls)
+                        if self.user_manager.add_booking(username, class_identifier):
+                            st.session_state.registered_classes.append(class_identifier)
+                            st.success(f"✅ Signed up for {cls['class']}!")
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ Already signed up for this class!")
+                st.divider()
         else:
             st.info("📭 No classes scheduled yet.")
 
@@ -526,18 +634,21 @@ def display_home_page():
 
     st.divider()
 
-    # Main content in two columns
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        with st.container():
+    # Available Classes
+    with st.container():
+        # Show different class display based on user role
+        if st.session_state.get("user_role") == "User":
+            workout_manager.display_available_classes_calendar()
+        else:
             st.subheader("💪 Available Classes")
             workout_manager.display_available_classes()
 
-    with col2:
-        with st.container():
-            st.subheader("👥 Meet Our Instructors")
-            display_instructor_info()
+    st.divider()
+
+    # Meet Our Instructors
+    with st.container():
+        st.subheader("👥 Meet Our Instructors")
+        display_instructor_info()
 
     st.divider()
 
@@ -584,8 +695,7 @@ def display_chatbot():
 
 # Reusable function for the workout schedule section
 def display_workout_schedule():
-    workout_manager.display_schedule()
-    workout_manager.display_sign_up()
+    workout_manager.display_schedule_with_signup()
     workout_manager.display_registered_classes()
 
 # Reusable function for the user profile section
